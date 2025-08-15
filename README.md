@@ -1,0 +1,1 @@
+# 1D-DeepRitz-IS
