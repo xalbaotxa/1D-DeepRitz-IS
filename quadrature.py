@@ -43,13 +43,12 @@ class QuadratureMethod(object):
             x = x.reshape((1,-1))
         return jnp.array(x),jnp.array(w)
 
-    # jit this
     def ISConstant(self, n, M, f_values):
         xtrain = jnp.array(self.RNG.uniform(size=(self.gdim, n)))
         f_sum = jnp.sum(f_values)
         cdf = jnp.cumsum(f_values) / f_sum
         mu = 1 / M * f_sum
-        xtrain = jax.vmap(lambda x: self.F_inv(x, M, f_values, mu, cdf))(xtrain)       # in_axes ?, out_axes?  
+        xtrain = jax.vmap(lambda x: self.F_inv(x, M, f_values, mu, cdf))(xtrain)       
         i_indices = (xtrain * M).astype(int)  # Compute i for all samples
         weights = mu / (n * f_values[i_indices[0,:]])
         effective_size = jnp.sum(weights)**2 / jnp.sum(weights**2)
@@ -58,12 +57,11 @@ class QuadratureMethod(object):
 
     @eqx.filter_jit
     def ISConstant2(self, n, x_values, f_values, xtrain):
-        #xtrain = jnp.array(self.RNG.uniform(size=(1,n)))
         x_values = jnp.insert(x_values, 0, 0, axis=1)
         sizes = x_values[0,1:]-x_values[0,:-1]
         mu = jnp.sum(f_values * sizes)
         cdf = jnp.cumsum(f_values * sizes) / mu
-        i_indices, xtrain = jax.vmap(lambda x: self.F_inv(x, x_values, f_values, mu, cdf))(xtrain)       # in_axes ?, out_axes?  
+        i_indices, xtrain = jax.vmap(lambda x: self.F_inv(x, x_values, f_values, mu, cdf))(xtrain)     
         weights = mu / (n * f_values[i_indices[0,:]])
         effective_size = jnp.sum(weights)**2 / jnp.sum(weights**2)
         return xtrain, weights, effective_size
@@ -100,29 +98,22 @@ class QuadratureMethod(object):
 
     @eqx.filter_jit
     def ISM(self, n, a, x_values, f_values, xtrain):
-        #x = jnp.array(RNG.uniform(size=n))
-        #x_values = jnp.insert(x_values, 0, 0, axis=1)
         x_values = jnp.concatenate([jnp.array([-x_values[0,0]]), x_values[0,:], jnp.array([2 - x_values[0,-1]])])
         gridpoints = (x_values[:-1] + x_values[1:]) / 2
-        #sizes = x_values[0,1:]-x_values[0,:-1]
         sizes = jnp.diff(gridpoints)
         mu = jnp.sum(f_values * sizes)
         cdf = jnp.cumsum(f_values * sizes) / mu
-        i_indices, xtrain = jax.vmap(lambda x: self.F_inv2(x, a, gridpoints, f_values, mu, cdf))(xtrain)       # in_axes ?, out_axes?  
+        i_indices, xtrain = jax.vmap(lambda x: self.F_inv2(x, a, gridpoints, f_values, mu, cdf))(xtrain)        
         w = 1 / (a * f_values[i_indices[0,:]] / mu +1 -a) / n
-        #effective_size = jnp.sum(w)**2 / jnp.sum(w**2)
         return xtrain, w, i_indices
 
     @eqx.filter_jit
     def F_inv2(self, y, a, gridpoints, f_values, mu, cdf):
         thresholds = a * cdf + (1 - a) * gridpoints[1:]
         i = jnp.searchsorted(thresholds, y)
-        
         padded_cdf = jnp.concatenate([jnp.array([0.0]), cdf])  
         padded_gridpoints = jnp.concatenate([jnp.array([0.0]), gridpoints])  
-        
         f_i = f_values[i] 
-    
         numerator = y - a * (padded_cdf[i] - f_i * padded_gridpoints[i+1] / mu)
         denominator = 1 - a + a * f_i / mu
         return i, numerator / denominator
@@ -134,35 +125,23 @@ class QuadratureMethod(object):
         right =  2 - x_values[:, -1]  
         x_padded = jnp.concatenate([left[:, None], x_values, right[:, None]], axis=1)  
         gridpoints = (x_padded[:, :-1] + x_padded[:, 1:]) / 2
-        #gridpoints = (x_values[:-1] + x_values[1:]) / 2
-        #sizes = x_values[0,1:]-x_values[0,:-1]
         sizes = jnp.diff(gridpoints, axis=1)
         mu = jnp.sum(f_values * sizes, axis=1)
-        #sizes = jnp.diff(x_values, axis=1)
-        #mu = jnp.sum(f_values * sizes, axis=1)
-        #print('shape f_values: ', f_values.shape)
-        #print('shape mu: ', mu.shape)
         cdf = jnp.cumsum(f_values * sizes, axis=1) / mu[:, jnp.newaxis]
-        #print('shape cdf: ', cdf.shape)
         p = alpha * (1 - alpha) ** (memory - jnp.arange(1, memory+1))
         p = p / jnp.sum(p)
         thresholds = jnp.cumsum(p)
         xtrain_flat = xtrain[0, :]
         q_index = jnp.sum(xtrain_flat[:, None] >= thresholds[None, :], axis=1)
         q_index = jnp.squeeze(q_index)
-        #print('shape q_index: ', q_index.shape)
         def apply_qn(y, i):
             return self.F_inv2(y, a, gridpoints[i], f_values[i], mu[i], cdf[i])
 
         i, transformed_xtrain = jax.vmap(apply_qn)(xtrain[0,:], q_index)
-        #print('shape transformed_xtrain: ', transformed_xtrain.shape)
         w = 1 / (a * f_values[q_index, i] / mu[q_index] +1 -a) / n
-        #print(w)
         return transformed_xtrain.reshape(1, -1), w
 
     @eqx.filter_jit
     def F_inv3(self, y, x_values, f_values, mu, cdf):
-        #cdf = cdf.reshape(-1)
-        #print(cdf.shape)
         i = jnp.searchsorted(cdf, y)
         return i, jnp.where(y <= cdf[0], mu * y / f_values[0], x_values[i] + mu * (y - cdf[i-1]) / f_values[i]) 
