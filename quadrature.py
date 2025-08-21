@@ -6,7 +6,6 @@ import equinox as eqx
 from scipy.special import roots_legendre
 from scipy.stats import qmc
 
-# This only works on startup!
 from jax import config
 config.update("jax_enable_x64", True)
 
