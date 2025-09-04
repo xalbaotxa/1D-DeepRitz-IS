@@ -8,4 +8,5 @@ To run the code, install the required dependencies with:
 python3 -m pip install --upgrade numpy scipy sympy matplotlib jaxlib jax optax equinox sympy2jax pyevtk lineax
 ``` 
 
-Xalbador Otxandorena. Email: xalbador.otxandorena@ehu.eus
+Xalbador Otxandorena. 
+Email: xalbador.otxandorena@ehu.eus
